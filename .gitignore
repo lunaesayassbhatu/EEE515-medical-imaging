@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# IDE
+.vscode/
+.idea/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Data — raw datasets are too large for git
+# Only the processed index CSVs are tracked
+Downloads/
+
+# Model checkpoints and large outputs
+*.pth
+*.pt
+*.ckpt
+runs/
+outputs/
