@@ -401,17 +401,193 @@ def make_demo_gif(zf, vol_ids):
 
 
 # -----------------------------------------------------------------------------
+# 10-PATIENT COMPARISON GRID  (python visualize_brats3d.py --comparison)
+# -----------------------------------------------------------------------------
+COMPARISON_PATH = (
+    r"C:\Users\sbhat\PycharmProjects\EEE515_medical_imaging"
+    r"\all_10_patients_comparison.png"
+)
+THUMB_W, THUMB_H = 420, 340   # pixels per patient thumbnail
+
+
+def _render_patient_thumbnail(meshes, voxel_counts):
+    """Render one patient off-screen and return an RGBA numpy array."""
+    pl = pv.Plotter(off_screen=True, window_size=(THUMB_W, THUMB_H))
+    pl.set_background("#0d0d0d")
+    pl.enable_anti_aliasing("ssaa")
+
+    for label_val, name, color, opacity, _ in REGIONS:
+        if name in meshes:
+            pl.add_mesh(meshes[name], color=color, opacity=opacity,
+                        smooth_shading=True, name=name)
+
+    pl.camera_position = "iso"
+    pl.reset_camera()
+    pl.camera.zoom(1.25)
+    pl.add_light(pv.Light(position=(200, 200, 400), intensity=0.6))
+
+    img = pl.screenshot(return_img=True)   # (H, W, 3) uint8
+    pl.close()
+    return img
+
+
+def make_comparison_grid(zf, vol_ids):
+    """
+    Render all 10 patients off-screen, tile into a 2x5 grid,
+    annotate each panel with patient ID and tumor volumes, save PNG.
+    """
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    import matplotlib.patches as mpatches
+    from matplotlib.gridspec import GridSpec
+
+    COLS, ROWS = 5, 2
+    assert len(vol_ids) <= COLS * ROWS
+
+    # ── per-patient data ──────────────────────────────────────────────────────
+    panels = []   # list of (vol_id, img_array, voxel_counts)
+
+    for i, vid in enumerate(vol_ids, 1):
+        print(f"  [{i}/{len(vol_ids)}] Rendering volume_{vid} ...")
+        meshes, vxc = load_patient(zf, vid)
+        if meshes is None:
+            # blank black panel
+            img = np.zeros((THUMB_H, THUMB_W, 3), dtype=np.uint8)
+            vxc = {1: 0, 2: 0, 4: 0}
+        else:
+            img = _render_patient_thumbnail(meshes, vxc)
+        panels.append((vid, img, vxc))
+
+    # ── figure layout ─────────────────────────────────────────────────────────
+    FIG_W = COLS * (THUMB_W / 100) + 0.4   # inches
+    # Extra vertical space per row: title + 3 stat lines + spacing
+    PANEL_H_IN = THUMB_H / 100
+    LABEL_H_IN = 1.05     # inches for text block below each thumbnail
+    FIG_H = ROWS * (PANEL_H_IN + LABEL_H_IN) + 1.6   # + header
+
+    fig = plt.figure(figsize=(FIG_W, FIG_H), facecolor="#0a0a0a")
+
+    # Header
+    fig.text(
+        0.5, 1 - 0.18 / FIG_H,
+        "BraTS2020  --  3D Glioma Segmentation  --  10 Patient Comparison",
+        ha="center", va="top", fontsize=15, fontweight="bold",
+        color="white", fontfamily="monospace",
+    )
+    fig.text(
+        0.5, 1 - 0.72 / FIG_H,
+        "Red = Enhancing Tumor (ET)     Yellow = Necrotic Core (NC)"
+        "     Green = Peritumoral Edema (ED)",
+        ha="center", va="top", fontsize=9, color="#bbbbbb",
+        fontfamily="monospace",
+    )
+
+    # Legend patches (top-right)
+    legend_handles = [
+        mpatches.Patch(color="#E5191A", label="Enhancing (ET)"),
+        mpatches.Patch(color="#FFE61A", label="Necrotic (NC)"),
+        mpatches.Patch(color="#18D62A", label="Edema (ED)"),
+    ]
+    fig.legend(
+        handles=legend_handles, loc="upper right",
+        fontsize=8, framealpha=0.15, labelcolor="white",
+        facecolor="#222222", edgecolor="#444444",
+    )
+
+    # Grid spec: each row has image + text block
+    # heights_ratios: [img_row, text_row, img_row, text_row]
+    h_ratios = []
+    for _ in range(ROWS):
+        h_ratios += [PANEL_H_IN, LABEL_H_IN]
+    gs = GridSpec(
+        ROWS * 2, COLS,
+        figure=fig,
+        hspace=0.02,
+        wspace=0.04,
+        top=1 - 1.1 / FIG_H,
+        bottom=0.02,
+        left=0.02,
+        right=0.98,
+        height_ratios=h_ratios,
+    )
+
+    for idx, (vid, img, vxc) in enumerate(panels):
+        row = idx // COLS
+        col = idx % COLS
+        gs_img  = gs[row * 2,     col]
+        gs_text = gs[row * 2 + 1, col]
+
+        # ── thumbnail ─────────────────────────────────────────────────────────
+        ax_img = fig.add_subplot(gs_img)
+        ax_img.imshow(img)
+        ax_img.set_facecolor("#0d0d0d")
+        ax_img.axis("off")
+
+        # Thin coloured border
+        for spine in ax_img.spines.values():
+            spine.set_edgecolor("#333333")
+            spine.set_linewidth(1.5)
+
+        # ── stats block ───────────────────────────────────────────────────────
+        ax_txt = fig.add_subplot(gs_text)
+        ax_txt.set_facecolor("#0d0d0d")
+        ax_txt.axis("off")
+
+        enh   = vxc.get(4, 0)
+        nec   = vxc.get(1, 0)
+        ede   = vxc.get(2, 0)
+        total = enh + nec + ede
+
+        # Patient ID header
+        ax_txt.text(
+            0.5, 0.97, f"Volume {vid}",
+            ha="center", va="top", fontsize=10, fontweight="bold",
+            color="white", fontfamily="monospace",
+            transform=ax_txt.transAxes,
+        )
+        # Volume stats
+        stats = [
+            (f"ET  {enh:>7,} mm3  ({enh/1000:5.1f} cm3)", "#E5191A"),
+            (f"NC  {nec:>7,} mm3  ({nec/1000:5.1f} cm3)", "#FFE61A"),
+            (f"ED  {ede:>7,} mm3  ({ede/1000:5.1f} cm3)", "#18D62A"),
+            (f"TOT {total:>7,} mm3  ({total/1000:5.1f} cm3)", "#cccccc"),
+        ]
+        y = 0.72
+        for text, color in stats:
+            ax_txt.text(
+                0.5, y, text,
+                ha="center", va="top", fontsize=7.2,
+                color=color, fontfamily="monospace",
+                transform=ax_txt.transAxes,
+            )
+            y -= 0.21
+
+    fig.savefig(
+        COMPARISON_PATH, dpi=150, bbox_inches="tight",
+        facecolor=fig.get_facecolor(),
+    )
+    plt.close(fig)
+
+    size_mb = os.path.getsize(COMPARISON_PATH) / 1e6
+    print(f"\nSaved: {COMPARISON_PATH}  ({size_mb:.1f} MB)")
+
+
+# -----------------------------------------------------------------------------
 # MAIN
 # -----------------------------------------------------------------------------
 def main():
-    gif_mode       = "--gif"       in sys.argv
-    predicted_mode = "--predicted" in sys.argv
+    gif_mode        = "--gif"        in sys.argv
+    predicted_mode  = "--predicted"  in sys.argv
+    comparison_mode = "--comparison" in sys.argv
 
     print("=" * 60)
     if gif_mode:
         print("BraTS2020 -- GIF export mode")
     elif predicted_mode:
         print("BraTS2020 -- EEE-515 Viewer  [AI Predictions]")
+    elif comparison_mode:
+        print("BraTS2020 -- 10-Patient Comparison Grid")
     else:
         print("BraTS2020 -- EEE-515 Interactive 3D Viewer  [Ground Truth]")
     print("=" * 60)
@@ -423,6 +599,8 @@ def main():
 
         if gif_mode:
             make_demo_gif(zf, vol_ids)
+        elif comparison_mode:
+            make_comparison_grid(zf, vol_ids)
         else:
             run_interactive_viewer(zf, vol_ids, use_predicted=predicted_mode)
 
