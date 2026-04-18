@@ -51,25 +51,32 @@ inspect per-region volume measurements in real time.
 ### Requirements
 
 ```bash
-pip install pyvista scikit-image h5py nibabel imageio numpy matplotlib
+pip install pyvista scikit-image h5py nibabel imageio numpy matplotlib streamlit plotly
 ```
 
-### Interactive 3D viewer
+### Streamlit web app (rotate in browser — no install beyond pip)
 
 ```bash
-cd EEE515_medical_imaging
+streamlit run app.py
+```
+
+Opens at `http://localhost:8501`. Use the sidebar to select a patient and
+toggle tumor regions. Rotate/zoom with mouse drag directly in the browser.
+
+### Interactive desktop viewer
+
+```bash
 python visualize_brats3d.py
 ```
 
-The script reads the BraTS2020 zip, loads 10 patients (~1–2 min first run),
-then opens the interactive window.
+Opens a PyVista window. Patient 100 loads immediately; press N/P to
+navigate to other patients.
 
-**Controls**
+**Keyboard controls**
 
-| Input | Action |
-|-------|--------|
+| Key | Action |
+|-----|--------|
 | Left-click drag | Rotate |
-| Middle-click drag / Shift+drag | Pan |
 | Scroll wheel | Zoom |
 | `N` / `→` | Next patient |
 | `P` / `←` | Previous patient |
@@ -85,16 +92,7 @@ then opens the interactive window.
 python visualize_brats3d.py --gif
 ```
 
-Renders 72 frames at 640×520 off-screen and saves `demo.gif` (~4 MB).
-
-### Save static PNG screenshots for all 10 patients
-
-The `brats3d_output/` folder already contains pre-rendered screenshots.
-To regenerate:
-
-```bash
-python visualize_brats3d.py --screenshots
-```
+Renders 72 frames off-screen and saves `demo.gif` (~4 MB).
 
 ---
 
@@ -102,27 +100,18 @@ python visualize_brats3d.py --screenshots
 
 ```
 EEE515_medical_imaging/
-├── visualize_brats3d.py      # Main pipeline (interactive + GIF + screenshots)
+├── app.py                    # Streamlit web app (rotate in browser)
+├── visualize_brats3d.py      # Desktop viewer + GIF export
 ├── demo.gif                  # Animated 360-degree tumor rotation
 ├── README.md
 ├── brats3d_output/
 │   ├── mosaic_all_patients.png
 │   ├── patient_100_3d.png
-│   ├── patient_101_3d.png
 │   └── ...  (10 patients)
 ├── datasets.py
 ├── preprocess_brats.py
 └── preprocess_monuseg.py
 ```
-
----
-
-## Team Members
-
-| Name | ASU ID | Role |
-|------|--------|------|
-| Luna | — | 3D visualization pipeline |
-| Sarthak Bhat | — | Data preprocessing & segmentation |
 
 ---
 
