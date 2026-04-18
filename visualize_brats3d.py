@@ -47,10 +47,11 @@ import pyvista as pv
 # -----------------------------------------------------------------------------
 # CONFIGURATION
 # -----------------------------------------------------------------------------
-ZIP_PATH   = r"C:\Users\sbhat\Downloads\archive (3).zip"
-OUT_DIR    = r"C:\Users\sbhat\PycharmProjects\EEE515_medical_imaging\brats3d_output"
-GIF_PATH   = r"C:\Users\sbhat\PycharmProjects\EEE515_medical_imaging\demo.gif"
-N_PATIENTS = 10
+ZIP_PATH    = r"C:\Users\sbhat\Downloads\archive (3).zip"
+OUT_DIR     = r"C:\Users\sbhat\PycharmProjects\EEE515_medical_imaging\brats3d_output"
+GIF_PATH    = r"C:\Users\sbhat\PycharmProjects\EEE515_medical_imaging\demo.gif"
+SEG_RESULTS = r"C:\Users\sbhat\PycharmProjects\EEE515_medical_imaging\seg_results"
+N_PATIENTS  = 10
 SMOOTH_ITER = 15
 MC_LEVEL    = 0.5
 WINDOW_W    = 1300
@@ -134,7 +135,7 @@ def build_meshes(vol):
 
 
 def load_patient(zf, vol_id):
-    """Load one patient fully. Returns (meshes, voxel_counts) or (None, None)."""
+    """Load ground-truth masks from h5. Returns (meshes, voxel_counts) or (None, None)."""
     vol = load_volume_mask(zf, vol_id)
     if vol is None:
         return None, None
@@ -147,15 +148,40 @@ def load_patient(zf, vol_id):
     return meshes, voxel_counts
 
 
+def load_patient_predicted(vol_id):
+    """
+    Load AI-predicted label map from seg_results/pred_volume_<id>.npy.
+    Returns (meshes, voxel_counts) or (None, None).
+    """
+    pred_path = os.path.join(SEG_RESULTS, f"pred_volume_{vol_id}.npy")
+    if not os.path.exists(pred_path):
+        print(f"  [!] No prediction found at {pred_path}")
+        print(f"      Run: python segment_brats.py --n 10   to generate predictions first.")
+        return None, None
+    vol = np.load(pred_path)
+    voxel_counts = {lv: int((vol == lv).sum()) for lv in [1, 2, 4]}
+    if sum(voxel_counts.values()) == 0:
+        print(f"  [!] Prediction for volume_{vol_id} has no tumor voxels")
+        return None, None
+    meshes = build_meshes(vol)
+    if not meshes:
+        return None, None
+    return meshes, voxel_counts
+
+
 # -----------------------------------------------------------------------------
 # INTERACTIVE VIEWER
 # -----------------------------------------------------------------------------
-def run_interactive_viewer(zf, vol_ids):
+def run_interactive_viewer(zf, vol_ids, use_predicted=False):
     """
     Open a PyVista window immediately with the first patient.
     Patients are loaded on-demand when the user navigates with N / P.
     NO auto-rotation. Full mouse + keyboard control.
+
+    use_predicted=True  -> load from seg_results/pred_volume_*.npy (AI output)
+    use_predicted=False -> load from h5 ground-truth masks (default)
     """
+    mode_label = "AI Predictions" if use_predicted else "Ground Truth"
 
     # ── shared mutable state (no class needed) ────────────────────────────────
     state = {
@@ -169,7 +195,7 @@ def run_interactive_viewer(zf, vol_ids):
     # ── plotter: explicitly interactive, trackball camera ─────────────────────
     pl = pv.Plotter(
         window_size=(WINDOW_W, WINDOW_H),
-        title="BraTS2020 -- EEE-515 Interactive Tumor Viewer  |  "
+        title=f"BraTS2020 -- EEE-515  [{mode_label}]  |  "
               "Drag=Rotate  Scroll=Zoom  N/P=Patient  E/C/T=Toggle  Q=Quit",
         off_screen=False,     # always interactive
     )
@@ -182,8 +208,12 @@ def run_interactive_viewer(zf, vol_ids):
         """Return (meshes, voxel_counts) for patients_idx, loading if needed."""
         vid = state["vol_ids"][idx]
         if vid not in state["cache"]:
-            print(f"  Loading volume_{vid} ...")
-            meshes, vxc = load_patient(zf, vid)
+            if use_predicted:
+                print(f"  Loading AI prediction for volume_{vid} ...")
+                meshes, vxc = load_patient_predicted(vid)
+            else:
+                print(f"  Loading volume_{vid} ...")
+                meshes, vxc = load_patient(zf, vid)
             state["cache"][vid] = (meshes, vxc)
         return state["cache"][vid]
 
@@ -374,13 +404,16 @@ def make_demo_gif(zf, vol_ids):
 # MAIN
 # -----------------------------------------------------------------------------
 def main():
-    gif_mode = "--gif" in sys.argv
+    gif_mode       = "--gif"       in sys.argv
+    predicted_mode = "--predicted" in sys.argv
 
     print("=" * 60)
     if gif_mode:
         print("BraTS2020 -- GIF export mode")
+    elif predicted_mode:
+        print("BraTS2020 -- EEE-515 Viewer  [AI Predictions]")
     else:
-        print("BraTS2020 -- EEE-515 Interactive 3D Viewer")
+        print("BraTS2020 -- EEE-515 Interactive 3D Viewer  [Ground Truth]")
     print("=" * 60)
 
     print(f"\nOpening zip: {ZIP_PATH}")
@@ -391,7 +424,7 @@ def main():
         if gif_mode:
             make_demo_gif(zf, vol_ids)
         else:
-            run_interactive_viewer(zf, vol_ids)
+            run_interactive_viewer(zf, vol_ids, use_predicted=predicted_mode)
 
 
 if __name__ == "__main__":
