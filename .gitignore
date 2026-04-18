@@ -36,3 +36,10 @@ Downloads/
 *.ckpt
 runs/
 outputs/
+
+# MONAI pretrained bundle (downloaded on first run via segment_brats.py)
+pretrained/
+
+# Large probability/confidence maps from segmentation (51 MB each)
+# Only the compact label maps (pred_volume_*.npy, ~8 MB each) are tracked
+seg_results/probs_volume_*.npy
