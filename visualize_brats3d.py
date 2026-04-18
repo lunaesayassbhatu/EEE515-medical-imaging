@@ -352,9 +352,99 @@ class BraTSViewer:
 
 
 # -----------------------------------------------------------------------------
+# GIF EXPORT  (python visualize_brats3d.py --gif)
+# -----------------------------------------------------------------------------
+GIF_VOL_ID  = 100   # patient to feature in the demo GIF
+GIF_FRAMES  = 72    # one frame every 5 degrees -> smooth 360 rotation
+GIF_PATH    = r"C:\Users\sbhat\PycharmProjects\EEE515_medical_imaging\demo.gif"
+GIF_W, GIF_H = 640, 520
+
+
+def make_demo_gif():
+    """
+    Render a 360-degree orbit of patient GIF_VOL_ID off-screen and save
+    as an animated GIF suitable for embedding in the GitHub README.
+    """
+    print("=" * 60)
+    print("BraTS2020 -- Generating demo.gif")
+    print("=" * 60)
+
+    print(f"\nLoading volume {GIF_VOL_ID} from zip...")
+    with zipfile.ZipFile(ZIP_PATH, "r") as zf:
+        vol = load_volume_mask(zf, GIF_VOL_ID)
+
+    if vol is None:
+        print("[ERROR] Could not load volume. Exiting.")
+        sys.exit(1)
+
+    voxel_counts = {lv: int((vol == lv).sum()) for lv in [1, 2, 4]}
+    total = sum(voxel_counts.values())
+    print(f"  Voxels - enhancing:{voxel_counts[4]:,}  "
+          f"necrotic:{voxel_counts[1]:,}  "
+          f"edema:{voxel_counts[2]:,}  total:{total:,}")
+
+    print("Building meshes...")
+    meshes = build_meshes(vol)
+    if not meshes:
+        print("[ERROR] No meshes built. Exiting.")
+        sys.exit(1)
+
+    print(f"Rendering {GIF_FRAMES} frames ({360//GIF_FRAMES} deg/frame)...")
+    pl = pv.Plotter(off_screen=True, window_size=(GIF_W, GIF_H))
+    pl.set_background("#0d0d0d")
+    pl.enable_anti_aliasing()
+
+    # Add all three tumor regions
+    for label_val, name, color, opacity, _ in REGIONS:
+        if name in meshes:
+            mesh, _ = meshes[name]
+            pl.add_mesh(mesh, color=color, opacity=opacity,
+                        smooth_shading=True, name=name)
+
+    # Title text burned into every frame
+    enh = voxel_counts.get(4, 0)
+    nec = voxel_counts.get(1, 0)
+    ede = voxel_counts.get(2, 0)
+    pl.add_text(
+        f"BraTS2020 -- volume_{GIF_VOL_ID}\n"
+        f"Red=Enhancing({enh//1000}cm3)  "
+        f"Yellow=Necrotic({nec//1000}cm3)  "
+        f"Green=Edema({ede//1000}cm3)",
+        position="upper_left",
+        font_size=9,
+        color="#dddddd",
+        font="courier",
+    )
+
+    # Generate smooth orbital camera path and write GIF
+    pl.camera_position = "iso"
+    pl.reset_camera()
+    pl.camera.zoom(1.2)
+
+    path = pl.generate_orbital_path(
+        n_points=GIF_FRAMES,
+        shift=0.0,
+        factor=2.4,
+        viewup=(0, 0, 1),
+    )
+
+    pl.open_gif(GIF_PATH)
+    pl.orbit_on_path(path, write_frames=True, viewup=(0, 0, 1), step=0.05)
+    pl.close()
+
+    size_mb = os.path.getsize(GIF_PATH) / 1_000_000
+    print(f"\nSaved: {GIF_PATH}  ({size_mb:.1f} MB)")
+
+
+# -----------------------------------------------------------------------------
 # MAIN
 # -----------------------------------------------------------------------------
 def main():
+    # --gif mode: generate rotating GIF and exit
+    if "--gif" in sys.argv:
+        make_demo_gif()
+        return
+
     print("=" * 60)
     print("BraTS2020 -- EEE-515 Interactive 3D Viewer")
     print("=" * 60)
